@@ -20,11 +20,19 @@ STD_PERIPH_DIR = STM32F10x_StdPeriph_Driver
 STD_PERIPH_INC = $(STD_PERIPH_DIR)/inc
 STD_PERIPH_SRC = $(STD_PERIPH_DIR)/src
 
+# First, determine which peripheral drivers are enabled in stm32f10x_conf.h
+# This parses the header file to find uncommented include lines for peripheral drivers
+ENABLED_PERIPHERALS = $(shell grep -o "include \"stm32f10x_[a-z]*.h\"" $(INC_DIR)/stm32f10x_conf.h | grep -v "^//" | sed 's/include "stm32f10x_\(.*\).h"/\1/g')
+
+# Generate list of peripheral source files based on enabled peripherals
+STD_PERIPH_C_SOURCES = $(foreach periph,$(ENABLED_PERIPHERALS),$(STD_PERIPH_SRC)/stm32f10x_$(periph).c)
+
 # Source files
 C_SOURCES = \
 	$(SRC_DIR)/main.c \
 	$(SRC_DIR)/stm32f10x_it.c \
-	$(SRC_DIR)/system_stm32f10x.c
+	$(SRC_DIR)/system_stm32f10x.c \
+	$(STD_PERIPH_C_SOURCES)
 
 # ASM sources
 ASM_SOURCES = $(STARTUP_DIR)/startup_stm32f10x_md.s
@@ -47,22 +55,30 @@ LDFLAGS = $(MCU) -T stm32f103c8_flash.ld -Wl,--gc-sections
 # Build directory
 BUILD_DIR = build
 
-# List of objects
+# Collect all object files
 OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
 
+# Create list of object dependencies
+vpath %.c $(SRC_DIR) $(STD_PERIPH_SRC)
+vpath %.s $(STARTUP_DIR)
+
 # Make sure build directory exists
 $(shell mkdir -p $(BUILD_DIR))
+
+# Print enabled peripherals (for debugging)
+$(info Enabled peripherals: $(ENABLED_PERIPHERALS))
+$(info Peripheral sources: $(notdir $(STD_PERIPH_C_SOURCES)))
 
 # Default target
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
 
 # Compile C files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+$(BUILD_DIR)/%.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
 # Compile startup assembly file
-$(BUILD_DIR)/%.o: $(STARTUP_DIR)/%.s
+$(BUILD_DIR)/%.o: %.s
 	$(CC) -c $(CFLAGS) -x assembler-with-cpp $< -o $@
 
 # Link
